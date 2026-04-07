@@ -426,11 +426,22 @@ var role = null, selRole2 = 'owner';
 var cfg = { tarifSiang:25000, tarifMalam:40000, tarifMenit:300, jamSiangMulai:10, jamSiangSelesai:18, jumlahMeja:7, namaTempat:'D-Ajiks Timer', warnMenit:10 };
 var tables2 = [], sessions2 = [], localMode = false;
 
+// ── FIREBASE CONFIG (sudah tertanam langsung) ──
+var FB_CONFIG = {
+  apiKey: "AIzaSyBfRmsPTI8TVyC29RlbGusf8PAythNptmg",
+  authDomain: "d-ajiks-timer-gacor.firebaseapp.com",
+  databaseURL: "https://d-ajiks-timer-gacor-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "d-ajiks-timer-gacor",
+  storageBucket: "d-ajiks-timer-gacor.firebasestorage.app",
+  messagingSenderId: "483672843875",
+  appId: "1:483672843875:web:82464a8cc90e250e813a56"
+};
+
 // ── FIREBASE ──
 function loadFbFromStorage() {
-  var raw = localStorage.getItem('fbCfg');
-  if (!raw) return false;
-  try { connectFb(JSON.parse(raw)); return true; } catch(e) { return false; }
+  // Selalu gunakan config yang sudah tertanam
+  connectFb(FB_CONFIG);
+  return true;
 }
 
 function connectFb(config) {
