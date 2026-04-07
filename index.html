@@ -10,12 +10,12 @@
 <script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 :root{
-  --bg:#080604;--surface:#100d0a;--surface2:#1a1410;--surface3:#241c15;
-  --border:#2e2318;--borderl:#3d3020;
-  --gold:#c9a84c;--gold2:#e8c96a;--gold3:#f5e098;--golddim:#7a6330;
+  --bg:#0c0a07;--surface:#141108;--surface2:#1c170e;--surface3:#241e12;
+  --border:#322a1a;--borderl:#4a3d22;
+  --gold:#d4af37;--gold2:#eac84e;--gold3:#f5e098;--golddim:#a07c28;
   --red:#c41e3a;--red2:#e8294a;--reddim:#5a0e1a;
-  --text:#f0e6d3;--muted:#7a6a58;--dim:#3d3020;
-  --accent:var(--gold);--danger:var(--red2);--warn:#d4880a;
+  --text:#f7f0e0;--text2:#ede0c4;--muted:#a89070;--dim:#4a3d22;
+  --accent:var(--gold);--danger:var(--red2);--warn:#e09420;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;overflow-x:hidden;}
@@ -311,7 +311,7 @@ td.cust{color:var(--text);font-family:'Rajdhani',sans-serif;font-size:13px;font-
     </div>
     <div class="lerr" id="lerr">Username / password / PIN salah.</div>
     <button class="lbtn" onclick="doLogin()">Masuk</button>
-    <div class="lhint">Owner: <b style="color:var(--gold)">gusti</b> / <b style="color:var(--gold)">admin</b> &nbsp;|&nbsp; PIN Kasir: <b style="color:var(--gold2)">1234</b></div>
+    <div class="lhint" style="color:var(--dim);font-size:11px;letter-spacing:1px">D-Ajiks Billiard Management System</div>
   </div>
 </div>
 
@@ -350,23 +350,19 @@ td.cust{color:var(--text);font-family:'Rajdhani',sans-serif;font-size:13px;font-
 <div class="modal-overlay del-modal" id="delOverlay">
   <div class="modal">
     <div class="modal-title">🗑 HAPUS RIWAYAT</div>
-    <div class="modal-sub" id="delSub">Verifikasi identitas diperlukan</div>
+    <div class="modal-sub" id="delSub">Masukkan password Owner untuk konfirmasi</div>
     <div class="del-info">
-      Untuk keamanan, hapus riwayat memerlukan <b>verifikasi akun Google</b>.<br>
-      Tindakan ini <b>tidak dapat dibatalkan</b>.
+      Untuk keamanan, tindakan ini memerlukan <b>verifikasi password Owner</b>.<br>
+      Data yang dihapus <b>tidak dapat dikembalikan</b>.
     </div>
-    <div id="delGoogleBtn">
-      <button class="google-signin-btn" onclick="signInGoogleForDelete()">
-        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-        Verifikasi dengan Google
-      </button>
+    <div class="fg" style="margin-bottom:6px">
+      <label class="fl">Password Owner</label>
+      <input class="fi" type="password" id="delPassInput" placeholder="Masukkan password kamu..." onkeydown="if(event.key==='Enter')verifyAndDelete()">
     </div>
-    <div id="delVerified" style="display:none">
-      <div style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.2);border-radius:2px;padding:10px 14px;font-size:13px;color:#00e5a0;margin-bottom:14px;">✓ Terverifikasi — <span id="delUserEmail"></span></div>
-      <button class="btn-del-confirm" id="btnDelConfirm" onclick="executeDelete()">🗑 Hapus Sekarang</button>
-    </div>
-    <div style="margin-top:12px">
-      <button class="btn-mv-cancel" style="width:100%" onclick="closeDelModal()">Batal</button>
+    <div class="lerr" id="delErr" style="margin-bottom:12px">Password salah. Coba lagi.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+      <button class="btn-mv-cancel" onclick="closeDelModal()">✕ Batal</button>
+      <button class="btn-del-confirm" onclick="verifyAndDelete()">🗑 Hapus</button>
     </div>
   </div>
 </div>
@@ -937,66 +933,80 @@ function addMoveLog(cust,from,to,saldo){
 }
 
 // ════════════════════════════════════════════
-// DELETE HISTORY (Google Auth)
+// DELETE HISTORY (Owner Password Verification)
 // ════════════════════════════════════════════
-var googleUser = null;
-function openDelModal(sessId){
-  delTargetId=sessId||null; delAll=!sessId; delVerifiedUser=null; googleUser=null;
-  document.getElementById('delSub').textContent=sessId?'Hapus sesi ini':'Hapus semua riwayat';
-  document.getElementById('delGoogleBtn').style.display='block';
-  document.getElementById('delVerified').style.display='none';
-  document.getElementById('delOverlay').classList.add('show');
-}
-function closeDelModal(){document.getElementById('delOverlay').classList.remove('show');}
+var delTargetId = null, delAll = false;
 
-function signInGoogleForDelete(){
-  if(!window.google||!window.google.accounts){
-    notif('Google Auth belum siap, coba sebentar lagi','d'); return;
+function openDelModal(sessId){
+  delTargetId = sessId||null;
+  delAll = !sessId;
+  var fd = document.getElementById('fDate').value;
+  var label = sessId ? 'Hapus sesi ini' : (fd ? 'Hapus riwayat tanggal ini' : 'Hapus semua riwayat');
+  document.getElementById('delSub').textContent = label;
+  document.getElementById('delPassInput').value = '';
+  document.getElementById('delErr').style.display = 'none';
+  document.getElementById('delOverlay').classList.add('show');
+  setTimeout(function(){ document.getElementById('delPassInput').focus(); }, 300);
+}
+
+function closeDelModal(){
+  document.getElementById('delOverlay').classList.remove('show');
+  document.getElementById('delPassInput').value = '';
+  document.getElementById('delErr').style.display = 'none';
+}
+
+function verifyAndDelete(){
+  var entered = document.getElementById('delPassInput').value;
+  var c = getCreds();
+  if (entered !== c.ownerPassword) {
+    document.getElementById('delErr').style.display = 'block';
+    document.getElementById('delPassInput').value = '';
+    document.getElementById('delPassInput').focus();
+    return;
   }
-  google.accounts.id.initialize({
-    client_id:'483672843875-web.apps.googleusercontent.com',
-    callback:function(resp){
-      try{
-        var parts=resp.credential.split('.');
-        var payload=JSON.parse(atob(parts[1]));
-        delVerifiedUser=payload.email||payload.name||'Terverifikasi';
-        document.getElementById('delGoogleBtn').style.display='none';
-        document.getElementById('delUserEmail').textContent=delVerifiedUser;
-        document.getElementById('delVerified').style.display='block';
-        notif('✓ Identitas terverifikasi','s');
-      }catch(e){notif('Verifikasi gagal','d');}
-    }
-  });
-  google.accounts.id.prompt();
+  executeDelete();
 }
 
 function executeDelete(){
-  if(!delVerifiedUser){notif('Verifikasi Google diperlukan!','d');return;}
-  if(delAll){
-    // Delete all
-    sessions2=[];
-    if(window._db) window._db.ref('sessions').remove();
-    localStorage.removeItem('bSess');
-    notif('🗑 Semua riwayat dihapus','s');
-  } else if(delTargetId) {
-    // Delete specific session
-    var idx=sessions2.findIndex(function(s){return s.id===delTargetId;});
-    if(idx>-1){
-      // Find Firebase key
-      if(window._db){
-        window._db.ref('sessions').once('value',function(snap){
-          var data=snap.val()||{};
+  var fd = document.getElementById('fDate').value;
+  if (delAll) {
+    if (fd) {
+      var dateStr = new Date(fd).toLocaleDateString('id-ID');
+      var toDelete = sessions2.filter(function(s){ return s.date === dateStr; });
+      if (window._db) {
+        window._db.ref('sessions').once('value', function(snap){
+          var data = snap.val()||{};
           Object.keys(data).forEach(function(k){
-            if(data[k].id===delTargetId) window._db.ref('sessions/'+k).remove();
+            if (toDelete.find(function(s){ return s.id === data[k].id; }))
+              window._db.ref('sessions/'+k).remove();
           });
         });
       }
-      sessions2.splice(idx,1);
-      localStorage.setItem('bSess',JSON.stringify(sessions2));
+      sessions2 = sessions2.filter(function(s){ return s.date !== dateStr; });
+      notif('🗑 Riwayat '+dateStr+' dihapus','s');
+    } else {
+      sessions2 = [];
+      if (window._db) window._db.ref('sessions').remove();
+      notif('🗑 Semua riwayat dihapus','s');
     }
-    notif('🗑 Sesi dihapus','s');
+    localStorage.setItem('bSess', JSON.stringify(sessions2));
+  } else if (delTargetId) {
+    var idx = sessions2.findIndex(function(s){ return s.id === delTargetId; });
+    if (idx > -1) {
+      if (window._db) {
+        window._db.ref('sessions').once('value', function(snap){
+          var data = snap.val()||{};
+          Object.keys(data).forEach(function(k){
+            if (data[k].id === delTargetId) window._db.ref('sessions/'+k).remove();
+          });
+        });
+      }
+      sessions2.splice(idx, 1);
+      localStorage.setItem('bSess', JSON.stringify(sessions2));
+    }
+    notif('🗑 Sesi berhasil dihapus','s');
   }
-  closeDelModal();renderRep();updStats();
+  closeDelModal(); renderRep(); updStats();
 }
 
 // ════════════════════════════════════════════
