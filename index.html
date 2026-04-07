@@ -579,11 +579,20 @@ function listenFb() {
     var data = snap.val()||{};
     tables2.forEach(function(t) {
       var fb = data['m'+t.id]; if(!fb) return;
+      var wasRunning = t.running;
       t.running=fb.running||false; t.paused=fb.paused||false;
       t.startTime=fb.startTime?new Date(fb.startTime):null;
-      t.elapsed=fb.elapsed||0; t.rateType=fb.rateType||'auto';
+      t.rateType=fb.rateType||'auto';
       t.totalCharge=fb.totalCharge||0; t.customerName=fb.customerName||'';
       t.presetHours=fb.presetHours||0;
+      // Selalu hitung elapsed dari startTime — bukan dari angka yang disimpan
+      if(t.running && !t.paused && t.startTime){
+        t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
+      } else if(t.paused){
+        t.elapsed = fb.elapsed||0;
+      } else {
+        t.elapsed = 0;
+      }
       if(t.running&&!t.paused&&!t.interval) t.interval=setInterval(function(){tick(t.id);},1000);
       if(!t.running&&t.interval){clearInterval(t.interval);t.interval=null;}
     });
@@ -812,7 +821,12 @@ function startT(id){
 
 function tick(id){
   var t=tables2[id-1];if(!t.running||t.paused)return;
-  t.elapsed++;
+  // Hitung elapsed dari startTime secara real-time — bukan increment
+  if(t.startTime){
+    t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
+  } else {
+    t.elapsed++;
+  }
   var acc=calcAcc(t.startTime,t.elapsed);
   t.totalCharge=acc.total;
 
@@ -859,7 +873,15 @@ function tick(id){
   updStats();
 }
 
-function pauseT(id){var t=tables2[id-1];t.paused=!t.paused;fbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');}
+function pauseT(id){
+  var t=tables2[id-1];
+  // Simpan elapsed yang akurat sebelum pause
+  if(!t.paused && t.startTime){
+    t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
+  }
+  t.paused=!t.paused;
+  fbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');
+}
 
 function stopT(id){
   var t=tables2[id-1];if(!t.running)return;
