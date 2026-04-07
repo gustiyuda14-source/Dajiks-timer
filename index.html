@@ -564,6 +564,7 @@ function connectFb(config) {
     window.fbConnected = true;
     updFbUI(true);
     listenFb();
+    loadCredsFromFb();
     notif('🔥 Firebase terhubung — real-time aktif!','s');
   } catch(e) {
     console.error('FB error:',e);
@@ -640,6 +641,29 @@ function discFb(){localStorage.removeItem('fbCfg');window._db=null;window.fbConn
 // ════════════════════════════════════════════
 // LOGIN
 // ════════════════════════════════════════════
+// Kredensial disimpan di Firebase agar sinkron semua device
+var credsCache = {ownerUsername:'gusti',ownerPassword:'admin',kasirPin:'1234'};
+
+function getCreds(){ return credsCache; }
+
+function loadCredsFromFb(){
+  if(!window._db) return;
+  window._db.ref('credentials').on('value', function(snap){
+    var data = snap.val();
+    if(data){ Object.assign(credsCache, data); }
+    else {
+      // Pertama kali — simpan default ke Firebase
+      window._db.ref('credentials').set(credsCache);
+    }
+  });
+}
+
+function saveCredsToFb(newCreds){
+  Object.assign(credsCache, newCreds);
+  localStorage.setItem('bc', JSON.stringify(credsCache));
+  if(window._db) window._db.ref('credentials').set(credsCache);
+}
+
 function selRole(r){
   selRole2=r;
   document.getElementById('rtO').classList.toggle('active',r==='owner');
@@ -677,7 +701,6 @@ function doLogout(){
   selRole('owner');document.getElementById('loginOverlay').style.display='flex';
   stDirect('dashboard');document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',i===0);});
 }
-function getCreds(){return JSON.parse(localStorage.getItem('bc')||'{"ownerUsername":"gusti","ownerPassword":"admin","kasirPin":"1234"}');}
 
 // ════════════════════════════════════════════
 // TABLES RENDER
@@ -1087,19 +1110,23 @@ function savSettings(){
 }
 function chOwner(){
   var c=getCreds(),nu=document.getElementById('nUser').value.trim(),op=document.getElementById('oPass').value,np=document.getElementById('nPass').value,cp=document.getElementById('cPass').value;
-  if(!op){notif('Password lama wajib!','d');return;}if(op!==c.ownerPassword){notif('Password lama salah!','d');return;}
-  if(np&&np.length<6){notif('Min. 6 karakter!','d');return;}if(np&&np!==cp){notif('Konfirmasi tidak cocok!','d');return;}
-  localStorage.setItem('bc',JSON.stringify({ownerUsername:nu||c.ownerUsername,ownerPassword:np||c.ownerPassword,kasirPin:c.kasirPin}));
-  document.getElementById('uDisp').textContent=nu||c.ownerUsername;
+  if(!op){notif('Password lama wajib!','d');return;}
+  if(op!==c.ownerPassword){notif('Password lama salah!','d');return;}
+  if(np&&np.length<6){notif('Min. 6 karakter!','d');return;}
+  if(np&&np!==cp){notif('Konfirmasi tidak cocok!','d');return;}
+  var newCreds={ownerUsername:nu||c.ownerUsername,ownerPassword:np||c.ownerPassword,kasirPin:c.kasirPin};
+  saveCredsToFb(newCreds);
+  document.getElementById('uDisp').textContent=newCreds.ownerUsername;
   ['nUser','oPass','nPass','cPass'].forEach(function(id){document.getElementById(id).value='';});
-  notif('✓ Kredensial diubah!','s');
+  notif('✓ Kredensial diubah & sinkron ke semua device!','s');
 }
 function chPin(){
   var c=getCreds(),np=document.getElementById('nPin').value,cp=document.getElementById('cPin').value;
-  if(!/^\d{4}$/.test(np)){notif('PIN harus 4 digit!','d');return;}if(np!==cp){notif('Konfirmasi PIN tidak cocok!','d');return;}
-  localStorage.setItem('bc',JSON.stringify(Object.assign({},c,{kasirPin:np})));
+  if(!/^\d{4}$/.test(np)){notif('PIN harus 4 digit!','d');return;}
+  if(np!==cp){notif('Konfirmasi PIN tidak cocok!','d');return;}
+  saveCredsToFb(Object.assign({},c,{kasirPin:np}));
   ['nPin','cPin'].forEach(function(id){document.getElementById(id).value='';});
-  notif('✓ PIN Kasir diubah!','s');
+  notif('✓ PIN Kasir diubah & sinkron ke semua device!','s');
 }
 function savCfg(){localStorage.setItem('bCfg',JSON.stringify(cfg));fbSaveCfg2();}
 function savLocal(){localStorage.setItem('bSess',JSON.stringify(sessions2));}
