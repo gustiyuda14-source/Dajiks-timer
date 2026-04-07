@@ -521,17 +521,29 @@ function savFbCfg() {
 
 function parseFbAndConnect(raw, cb) {
   try {
-    var cleaned = raw.trim()
-      .replace(/\/\/.*/g, '')
-      .replace(/(\w+)\s*:/g, '"$1":')
-      .replace(/'/g, '"')
-      .replace(/,\s*}/g, '}')
-      .replace(/,\s*]/g, ']');
-    if (!cleaned.startsWith('{')) cleaned = '{' + cleaned + '}';
+    var cleaned = raw.trim();
+    // Remove const firebaseConfig = and semicolons
+    cleaned = cleaned.replace(/const\s+\w+\s*=\s*/g,'').replace(/;$/g,'').trim();
+    // Extract just the {...} block
+    var start = cleaned.indexOf('{'), end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1) cleaned = cleaned.substring(start, end+1);
+    // Fix unquoted keys: word: → "word":
+    cleaned = cleaned.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":');
+    // Fix single quotes to double quotes
+    cleaned = cleaned.replace(/:\s*'([^']*)'/g, ': "$1"');
+    // Remove trailing commas
+    cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
+    // Remove comments
+    cleaned = cleaned.replace(/\/\/.*/g, '');
     var config = JSON.parse(cleaned);
-    if (!config.databaseURL) { notif('databaseURL tidak ditemukan! Pastikan Realtime Database sudah dibuat.', 'd'); return; }
+    if (!config.databaseURL) {
+      notif('databaseURL tidak ditemukan! Pastikan Realtime Database sudah dibuat.','d');
+      return;
+    }
     cb(config);
-  } catch(e) { notif('Format config salah: ' + e.message, 'd'); }
+  } catch(e) {
+    notif('Format salah. Coba paste ulang dari awal { sampai }','d');
+  }
 }
 
 function discFb() {
