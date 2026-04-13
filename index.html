@@ -579,13 +579,21 @@ function listenFb() {
     var data = snap.val()||{};
     tables2.forEach(function(t) {
       var fb = data['m'+t.id]; if(!fb) return;
-      var wasRunning = t.running;
       t.running=fb.running||false; t.paused=fb.paused||false;
       t.startTime=fb.startTime?new Date(fb.startTime):null;
       t.rateType=fb.rateType||'auto';
-      t.totalCharge=fb.totalCharge||0; t.customerName=fb.customerName||'';
+      t.totalCharge=fb.totalCharge||0;
       t.presetHours=fb.presetHours||0;
-      // Selalu hitung elapsed dari startTime — bukan dari angka yang disimpan
+      // Only update customerName from Firebase if the input is not currently focused
+      var activeInput = document.activeElement;
+      var thisInput = document.getElementById('cn'+t.id);
+      var isTyping = activeInput && thisInput && activeInput === thisInput;
+      if(!isTyping){
+        t.customerName=fb.customerName||'';
+        // Also update the input field value if not focused
+        if(thisInput && !isTyping) thisInput.value = t.customerName;
+      }
+      // Always recalculate elapsed from startTime for accuracy
       if(t.running && !t.paused && t.startTime){
         t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
       } else if(t.paused){
@@ -751,10 +759,10 @@ function renderT(){
     c.innerHTML=
       '<div class="th"><div class="tn">MEJA '+t.id+'</div><div class="ts '+sc+'">'+sl+'</div></div>'+
       '<div class="tb2">'+
-      // Customer
-      (!t.running
-        ?'<input class="cname-input" type="text" placeholder="👤 Nama Customer..." id="cn'+t.id+'" value="'+esc(t.customerName)+'" onchange="setCN('+t.id+',this.value)">'
-        :'<div class="cname-display">👤 '+esc(t.customerName||'—')+'</div>')+
+      // Customer name — always editable whether running or not
+      '<input class="cname-input" type="text" placeholder="👤 Nama Customer..." id="cn'+t.id+'" value="'+esc(t.customerName)+'" '+
+        'style="'+(t.running?'border-color:var(--golddim);color:var(--gold2);':'')+'margin-bottom:8px" '+
+        'onchange="setCN('+t.id+',this.value)" oninput="setCN('+t.id+',this.value)">'+
       // Preset (only when not running)
       presetHtml+
       // Timer
@@ -886,6 +894,11 @@ function pauseT(id){
 function stopT(id){
   var t=tables2[id-1];if(!t.running)return;
   clearInterval(t.interval);t.interval=null;
+  // Get customer name — read from input field as final capture
+  var custInput = document.getElementById('cn'+id);
+  if(custInput && custInput.value.trim()){
+    t.customerName = custInput.value.trim();
+  }
   var acc=calcAcc(t.startTime,t.elapsed);
   var s={
     id:Date.now(),meja:id,customerName:t.customerName||'',
@@ -905,7 +918,11 @@ function stopT(id){
   renderT();renderRep();
 }
 
-function setCN(id,v){tables2[id-1].customerName=v;}
+function setCN(id,v){
+  tables2[id-1].customerName=v;
+  // Sync to Firebase immediately so all devices see the updated name
+  if(tables2[id-1].running) fbSetT(tables2[id-1]);
+}
 function setR(id,t){var tb=tables2[id-1];if(tb.running)return;tb.rateType=t;renderT();}
 
 // ════════════════════════════════════════════
