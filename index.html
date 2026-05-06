@@ -559,21 +559,43 @@ function connectSb() {
     // Subscribe to realtime changes on all 3 tables
     sbChannel = _sb.channel('billiard-sync')
       .on('postgres_changes', {event:'*', schema:'public', table:'timer_tables'}, function(payload) {
-        console.log('[SB REALTIME] timer_tables change:', payload.eventType, payload.new);
         var row = payload.new; if(!row) return;
         var t = tables2[row.id - 1]; if(!t) return;
+
+        // Track whether running/paused state changed — only full re-render on state change
+        var stateChanged = (t.running !== row.running || t.paused !== row.paused);
+
         t.running = row.running; t.paused = row.paused;
         t.startTime = row.start_time ? new Date(row.start_time) : null;
         t.rateType = row.rate_type||'auto'; t.totalCharge = row.total_charge||0;
         t.presetHours = row.preset_hours||0;
+
+        // Update customer name ONLY if the user is not currently typing in that field
         var ai = document.activeElement, ci = document.getElementById('cn'+t.id);
-        if(!(ai && ci && ai===ci)){ t.customerName=row.customer_name||''; if(ci)ci.value=t.customerName; }
+        var isTyping = ai && ci && ai === ci;
+        if(!isTyping){
+          t.customerName = row.customer_name||'';
+          if(ci) ci.value = t.customerName;
+        }
+
         if(t.running&&!t.paused&&t.startTime){
           t.elapsed=Math.floor((Date.now()-new Date(t.startTime).getTime())/1000);
         }else if(t.paused){ t.elapsed=row.elapsed||0; }else{ t.elapsed=0; }
+
+        // Start/stop interval
         if(t.running&&!t.paused){ if(!t.interval)t.interval=setInterval(function(){tick(t.id);},1000); }
         else{ if(t.interval){clearInterval(t.interval);t.interval=null;} }
-        renderT(); updStats();
+
+        // Full re-render only when running/paused state changed (not just name update)
+        // This prevents destroying the input DOM while user is typing
+        if(stateChanged){
+          renderT();
+        } else {
+          // Partial update: just refresh stats and name display without rebuilding DOM
+          var dispEl = document.getElementById('cn'+t.id);
+          if(dispEl && !isTyping) dispEl.value = t.customerName;
+        }
+        updStats();
       })
       .on('postgres_changes', {event:'*', schema:'public', table:'sessions'}, function(payload) {
         console.log('[SB REALTIME] sessions change');
@@ -808,10 +830,10 @@ function renderT(){
     c.innerHTML=
       '<div class="th"><div class="tn">MEJA '+t.id+'</div><div class="ts '+sc+'">'+sl+'</div></div>'+
       '<div class="tb2">'+
-      // Customer name — always editable whether running or not
+      // Customer name — always editable, syncs on every keystroke (debounced 400ms)
       '<input class="cname-input" type="text" placeholder="👤 Nama Customer..." id="cn'+t.id+'" value="'+esc(t.customerName)+'" '+
         'style="'+(t.running?'border-color:var(--golddim);color:var(--gold2);':'')+'margin-bottom:8px" '+
-        'onchange="setCN('+t.id+',this.value)">'+
+        'oninput="setCN('+t.id+',this.value)" onchange="setCN('+t.id+',this.value)">'+
       // Preset (only when not running)
       presetHtml+
       // Timer
@@ -966,9 +988,12 @@ function stopT(id){
   renderT();renderRep();
 }
 
+var _cnDebounce = {};
 function setCN(id,v){
   tables2[id-1].customerName=v;
-  sbSetT(tables2[id-1]);
+  // Debounce 400ms so we don't spam Supabase on every keystroke
+  clearTimeout(_cnDebounce[id]);
+  _cnDebounce[id] = setTimeout(function(){ sbSetT(tables2[id-1]); }, 400);
 }
 function setR(id,t){var tb=tables2[id-1];if(tb.running)return;tb.rateType=t;renderT();}
 
