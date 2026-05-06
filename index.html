@@ -575,6 +575,10 @@ function connectFb(config) {
 
 function listenFb() {
   if (!window._db) return;
+  // Remove existing listeners first to prevent duplicates on re-login
+  window._db.ref('tables').off();
+  window._db.ref('sessions').off();
+  window._db.ref('config').off();
   window._db.ref('tables').on('value', function(snap) {
     var data = snap.val()||{};
     tables2.forEach(function(t) {
@@ -590,10 +594,9 @@ function listenFb() {
       var isTyping = activeInput && thisInput && activeInput === thisInput;
       if(!isTyping){
         t.customerName=fb.customerName||'';
-        // Also update the input field value if not focused
-        if(thisInput && !isTyping) thisInput.value = t.customerName;
+        if(thisInput) thisInput.value = t.customerName;
       }
-      // Always recalculate elapsed from startTime for accuracy
+      // Recalculate elapsed from startTime for accuracy
       if(t.running && !t.paused && t.startTime){
         t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
       } else if(t.paused){
@@ -665,11 +668,11 @@ function getCreds(){ return credsCache; }
 
 function loadCredsFromFb(){
   if(!window._db) return;
+  window._db.ref('credentials').off();
   window._db.ref('credentials').on('value', function(snap){
     var data = snap.val();
     if(data){ Object.assign(credsCache, data); }
     else {
-      // Pertama kali — simpan default ke Firebase
       window._db.ref('credentials').set(credsCache);
     }
   });
@@ -713,6 +716,12 @@ function loginOk(r){
 function doLogout(){
   role=null;
   tables2.forEach(function(t){if(t.interval){clearInterval(t.interval);t.interval=null;}});
+  if(window._db){
+    window._db.ref('tables').off();
+    window._db.ref('sessions').off();
+    window._db.ref('config').off();
+    window._db.ref('credentials').off();
+  }
   ['lUser','lPass','lPin'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
   document.getElementById('lerr').style.display='none';
   selRole('owner');document.getElementById('loginOverlay').style.display='flex';
@@ -828,13 +837,8 @@ function startT(id){
 }
 
 function tick(id){
-  var t=tables2[id-1];if(!t.running||t.paused)return;
-  // Hitung elapsed dari startTime secara real-time — bukan increment
-  if(t.startTime){
-    t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
-  } else {
-    t.elapsed++;
-  }
+  var t=tables2[id-1];if(!t.running||t.paused||!t.startTime)return;
+  t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
   var acc=calcAcc(t.startTime,t.elapsed);
   t.totalCharge=acc.total;
 
@@ -883,9 +887,12 @@ function tick(id){
 
 function pauseT(id){
   var t=tables2[id-1];
-  // Simpan elapsed yang akurat sebelum pause
   if(!t.paused && t.startTime){
+    // Pausing: snapshot elapsed before freeze
     t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
+  } else if(t.paused){
+    // Resuming: shift startTime forward so (now - startTime) = elapsed at pause
+    t.startTime = new Date(Date.now() - t.elapsed * 1000);
   }
   t.paused=!t.paused;
   fbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');
