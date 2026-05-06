@@ -561,34 +561,58 @@ function connectFb(config) {
   try {
     if (!firebase.apps.length) firebase.initializeApp(config);
     window._db = firebase.database();
-    window.fbConnected = true;
-    updFbUI(true);
-    listenFb();
-    loadCredsFromFb();
-    notif('🔥 Firebase terhubung — real-time aktif!','s');
+    console.log('[FIREBASE] Database reference created');
+
+    // Monitor actual WebSocket connection
+    window._db.ref('.info/connected').on('value', function(snap) {
+      if(snap.val() === true) {
+        window.fbConnected = true;
+        console.log('[FIREBASE] ✓ Connected to WebSocket');
+        updFbUI(true);
+        listenFb();
+        loadCredsFromFb();
+        notif('🔥 Real-time aktif!','s');
+      } else {
+        window.fbConnected = false;
+        console.warn('[FIREBASE] ✗ Disconnected from WebSocket');
+        updFbUI(false);
+      }
+    }, function(err) {
+      console.error('[FIREBASE] Connection error:', err);
+      window.fbConnected = false;
+      updFbUI(false);
+    });
   } catch(e) {
-    console.error('FB error:',e);
+    console.error('[FIREBASE] Init error:',e);
     window.fbConnected = false; localMode = true;
     updFbUI(false);
+    notif('❌ Firebase error: '+e.message,'d');
   }
 }
 
 function listenFb() {
-  if (!window._db) return;
-  // Remove existing listeners first to prevent duplicates on re-login
+  if (!window._db) {
+    console.error('[REALTIME] Firebase database not initialized');
+    return;
+  }
   window._db.ref('tables').off();
   window._db.ref('sessions').off();
   window._db.ref('config').off();
+
+  // TABLES LISTENER — syncs timer state across all devices
   window._db.ref('tables').on('value', function(snap) {
+    console.log('[REALTIME] Tables data received:', snap.val());
     var data = snap.val()||{};
     tables2.forEach(function(t) {
-      var fb = data['m'+t.id]; if(!fb) return;
-      t.running=fb.running||false; t.paused=fb.paused||false;
+      var fb = data['m'+t.id];
+      if(!fb) return;
+      var oldRunning = t.running;
+      t.running=fb.running||false;
+      t.paused=fb.paused||false;
       t.startTime=fb.startTime?new Date(fb.startTime):null;
       t.rateType=fb.rateType||'auto';
       t.totalCharge=fb.totalCharge||0;
       t.presetHours=fb.presetHours||0;
-      // Only update customerName from Firebase if the input is not currently focused
       var activeInput = document.activeElement;
       var thisInput = document.getElementById('cn'+t.id);
       var isTyping = activeInput && thisInput && activeInput === thisInput;
@@ -596,7 +620,7 @@ function listenFb() {
         t.customerName=fb.customerName||'';
         if(thisInput) thisInput.value = t.customerName;
       }
-      // Recalculate elapsed from startTime for accuracy
+      // Recalculate elapsed from startTime
       if(t.running && !t.paused && t.startTime){
         t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
       } else if(t.paused){
@@ -604,29 +628,78 @@ function listenFb() {
       } else {
         t.elapsed = 0;
       }
-      if(t.running&&!t.paused&&!t.interval) t.interval=setInterval(function(){tick(t.id);},1000);
-      if(!t.running&&t.interval){clearInterval(t.interval);t.interval=null;}
+      // Setup/teardown interval for running timers
+      if(t.running&&!t.paused){
+        if(!t.interval){
+          t.interval=setInterval(function(){tick(t.id);},1000);
+          console.log('[REALTIME] Started interval for table '+t.id);
+        }
+      } else {
+        if(t.interval){
+          clearInterval(t.interval);
+          t.interval=null;
+          console.log('[REALTIME] Stopped interval for table '+t.id);
+        }
+      }
+      if(oldRunning !== t.running) {
+        console.log('[REALTIME] Table '+t.id+' state changed: running='+t.running);
+      }
     });
     renderT(); updStats();
+  }, function(err) {
+    console.error('[REALTIME] Tables listener error:', err);
+    notif('❌ Gagal listen tables','d');
   });
+
+  // SESSIONS LISTENER
   window._db.ref('sessions').on('value', function(snap) {
     var data = snap.val()||{};
     sessions2 = Object.values(data);
+    console.log('[REALTIME] Sessions synced: '+sessions2.length);
     renderRep(); updStats();
+  }, function(err) {
+    console.error('[REALTIME] Sessions listener error:', err);
   });
+
+  // CONFIG LISTENER
   window._db.ref('config').on('value', function(snap) {
-    var data = snap.val(); if(data){Object.assign(cfg,data);updShiftBanner();}
+    var data = snap.val();
+    if(data){
+      Object.assign(cfg,data);
+      console.log('[REALTIME] Config synced');
+      updShiftBanner();
+    }
+  }, function(err) {
+    console.error('[REALTIME] Config listener error:', err);
+  });
+
+  console.log('[REALTIME] All listeners attached');
+
+  // Force initial sync - pull all current data from Firebase
+  window._db.ref('tables').once('value', function(snap) {
+    console.log('[REALTIME] Force-sync complete. Data:', snap.val());
+  }).catch(function(err) {
+    console.error('[REALTIME] Force-sync failed:', err);
   });
 }
 
 function fbSetT(t) {
-  if(!window._db) return;
-  window._db.ref('tables/m'+t.id).set({
+  if(!window._db) {
+    console.warn('[SYNC] Firebase not ready for table '+t.id);
+    return;
+  }
+  var data = {
     running:t.running,paused:t.paused,
     startTime:t.startTime?t.startTime.toISOString():null,
     elapsed:t.elapsed,rateType:t.rateType,
     totalCharge:t.totalCharge,customerName:t.customerName||'',
     presetHours:t.presetHours||0
+  };
+  window._db.ref('tables/m'+t.id).set(data).then(function() {
+    console.log('[SYNC] Table '+t.id+' synced to Firebase: running='+t.running+', elapsed='+t.elapsed);
+  }).catch(function(err) {
+    console.error('[SYNC] Failed to sync table '+t.id+':', err);
+    notif('⚠️ Sinkronisasi table '+t.id+' gagal','');
   });
 }
 function fbAddSess(s){if(!window._db)return;window._db.ref('sessions').push(s);}
@@ -828,6 +901,7 @@ function startT(id){
   t.customerName=el?el.value.trim():'';
   t.running=true;t.paused=false;t.startTime=new Date();t.elapsed=0;t.totalCharge=0;
   t.interval=setInterval(function(){tick(id);},1000);
+  console.log('[ACTION] Starting table '+id);
   fbSetT(t);
   if(localMode||!window.fbConnected)savLocal();
   renderT();
@@ -881,7 +955,8 @@ function tick(id){
     if((3600-(t.elapsed%3600))===cfg.warnMenit*60)notif('⚠️ Meja '+id+': '+cfg.warnMenit+' menit lagi!','');
   }
 
-  if(t.elapsed%15===0){fbSetT(t);if(localMode||!window.fbConnected)savLocal();}
+  // Sync to Firebase every 5 seconds for real-time updates across devices
+  if(t.elapsed%5===0){fbSetT(t);if(localMode||!window.fbConnected)savLocal();}
   updStats();
 }
 
@@ -890,9 +965,11 @@ function pauseT(id){
   if(!t.paused && t.startTime){
     // Pausing: snapshot elapsed before freeze
     t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
+    console.log('[ACTION] Pausing table '+id+' at '+t.elapsed+'s');
   } else if(t.paused){
     // Resuming: shift startTime forward so (now - startTime) = elapsed at pause
     t.startTime = new Date(Date.now() - t.elapsed * 1000);
+    console.log('[ACTION] Resuming table '+id+' from '+t.elapsed+'s');
   }
   t.paused=!t.paused;
   fbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');
@@ -901,6 +978,7 @@ function pauseT(id){
 function stopT(id){
   var t=tables2[id-1];if(!t.running)return;
   clearInterval(t.interval);t.interval=null;
+  console.log('[ACTION] Stopping table '+id+' after '+t.elapsed+'s');
   // Get customer name — read from input field as final capture
   var custInput = document.getElementById('cn'+id);
   if(custInput && custInput.value.trim()){
@@ -927,6 +1005,7 @@ function stopT(id){
 
 function setCN(id,v){
   tables2[id-1].customerName=v;
+  console.log('[ACTION] Set customer name for table '+id+': '+v);
   fbSetT(tables2[id-1]);
 }
 function setR(id,t){var tb=tables2[id-1];if(tb.running)return;tb.rateType=t;renderT();}
