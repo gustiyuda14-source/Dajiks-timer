@@ -762,7 +762,7 @@ function renderT(){
       // Customer name — always editable whether running or not
       '<input class="cname-input" type="text" placeholder="👤 Nama Customer..." id="cn'+t.id+'" value="'+esc(t.customerName)+'" '+
         'style="'+(t.running?'border-color:var(--golddim);color:var(--gold2);':'')+'margin-bottom:8px" '+
-        'onchange="setCN('+t.id+',this.value)" oninput="setCN('+t.id+',this.value)">'+
+        'onchange="setCN('+t.id+',this.value)">'+
       // Preset (only when not running)
       presetHtml+
       // Timer
