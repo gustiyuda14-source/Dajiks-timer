@@ -920,8 +920,7 @@ function stopT(id){
 
 function setCN(id,v){
   tables2[id-1].customerName=v;
-  // Sync to Firebase immediately so all devices see the updated name
-  if(tables2[id-1].running) fbSetT(tables2[id-1]);
+  fbSetT(tables2[id-1]);
 }
 function setR(id,t){var tb=tables2[id-1];if(tb.running)return;tb.rateType=t;renderT();}
 
