@@ -1067,8 +1067,6 @@ function addMoveLog(cust,from,to,saldo){
 // ════════════════════════════════════════════
 // DELETE HISTORY (Owner Password Verification)
 // ════════════════════════════════════════════
-var delTargetId = null, delAll = false;
-
 function openDelModal(sessId){
   delTargetId = sessId||null;
   delAll = !sessId;
@@ -1103,7 +1101,7 @@ function executeDelete(){
   var fd = document.getElementById('fDate').value;
   if (delAll) {
     if (fd) {
-      var dateStr = new Date(fd).toLocaleDateString('id-ID');
+      var dateStr = fdToWITA(fd);
       var toDelete = sessions2.filter(function(s){ return s.date === dateStr; });
       toDelete.forEach(function(s){ sbDelSess(s.id); });
       sessions2 = sessions2.filter(function(s){ return s.date !== dateStr; });
@@ -1114,7 +1112,7 @@ function executeDelete(){
     }
   } else if (delTargetId) {
     sbDelSess(delTargetId);
-    sessions2 = sessions2.filter(function(s){ return s.id !== delTargetId; });
+    sessions2 = sessions2.filter(function(s){ return String(s.id) !== String(delTargetId); });
     notif('🗑 Sesi berhasil dihapus','s');
   }
   closeDelModal(); renderRep(); updStats();
@@ -1144,9 +1142,13 @@ function updShiftBanner(){
 // ════════════════════════════════════════════
 // REPORT
 // ════════════════════════════════════════════
+function fdToWITA(fd){
+  // Convert YYYY-MM-DD input to D/M/YYYY (id-ID format) without any UTC timezone shift
+  var p=fd.split('-'); return parseInt(p[2])+'/'+parseInt(p[1])+'/'+p[0];
+}
 function renderRep(){
   var fd=document.getElementById('fDate').value;
-  var fl=fd?sessions2.filter(function(s){return s.date===new Date(fd).toLocaleDateString('id-ID');}):sessions2;
+  var fl=fd?sessions2.filter(function(s){return s.date===fdToWITA(fd);}):sessions2;
   var tot=fl.reduce(function(a,s){return a+s.charge;},0);
   document.getElementById('rTot').textContent='Rp '+fmtR(tot);
   document.getElementById('rSes').textContent=fl.length;
@@ -1169,7 +1171,7 @@ function renderRep(){
 }
 function expCSV(){
   var fd=document.getElementById('fDate').value;
-  var fl=fd?sessions2.filter(function(s){return s.date===new Date(fd).toLocaleDateString('id-ID');}):sessions2;
+  var fl=fd?sessions2.filter(function(s){return s.date===fdToWITA(fd);}):sessions2;
   var rows=[['Waktu Mulai','Meja','Customer','Durasi','Preset','Siang(Rp)','Malam(Rp)','Total(Rp)']];
   fl.forEach(function(s){rows.push([new Date(s.start).toLocaleString('id-ID'),'Meja '+s.meja,s.customerName||'',fmtT(s.elapsed),(s.presetHours||'—'),s.siangCharge||0,s.malamCharge||0,s.charge]);});
   var a=document.createElement('a');
@@ -1264,7 +1266,7 @@ function updClock(){
 // INIT
 // ════════════════════════════════════════════
 document.getElementById('fDate').addEventListener('change',renderRep);
-document.getElementById('fDate').value=new Date().toISOString().split('T')[0];
+var _w=getWITA();document.getElementById('fDate').value=_w.getFullYear()+'-'+String(_w.getMonth()+1).padStart(2,'0')+'-'+String(_w.getDate()).padStart(2,'0');
 setInterval(updClock,1000);updClock();updSbUI(false);
 </script>
 </body>
