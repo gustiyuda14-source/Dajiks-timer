@@ -680,9 +680,28 @@ function listenSb() {
       credsCache.ownerPassword=d.owner_password;
       credsCache.kasirPin=d.kasir_pin;
     })
-    .subscribe();
+    .subscribe(function(status){
+      // Reflect the real channel state so realtime failures are visible, not silent
+      if(status==='SUBSCRIBED'){
+        window.sbConnected=true; updSbUI(true);
+      } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+        console.error('Realtime channel status:',status);
+        notif('⚠ Realtime terputus ('+status+') — coba reconnect','d');
+        updSbUI(false);
+      }
+    });
 }
 
+// Surface Supabase write errors instead of swallowing them silently.
+// A failed write here is exactly what breaks multi-device sync, so it must be visible.
+function sbResult(label){
+  return function(res){
+    if(res&&res.error){
+      console.error('Supabase '+label+' error:',res.error);
+      notif('⚠ Gagal '+label+': '+(res.error.message||'cek koneksi/izin DB'),'d');
+    }
+  };
+}
 function sbSetT(t) {
   if(!window._sb||!window.sbConnected) return;
   window._sb.from('timer_tables').update({
@@ -691,7 +710,7 @@ function sbSetT(t) {
     elapsed:t.elapsed,rate_type:t.rateType,
     total_charge:t.totalCharge,customer_name:t.customerName||'',
     preset_hours:t.presetHours||0,updated_at:new Date().toISOString()
-  }).eq('id',t.id).then(function(){});
+  }).eq('id',t.id).then(sbResult('simpan meja'));
 }
 function sbAddSess(s){
   if(!window._sb||!window.sbConnected) return;
@@ -701,7 +720,7 @@ function sbAddSess(s){
     siang_sec:s.siangSec||0,malam_sec:s.malamSec||0,
     siang_charge:s.siangCharge||0,malam_charge:s.malamCharge||0,
     charge:s.charge,date_label:s.date
-  }).then(function(){});
+  }).then(sbResult('simpan sesi'));
 }
 function sbSaveCfg(){
   if(!window._sb||!window.sbConnected) return;
@@ -709,11 +728,11 @@ function sbSaveCfg(){
     tarif_siang:cfg.tarifSiang,tarif_malam:cfg.tarifMalam,
     jam_siang_mulai:cfg.jamSiangMulai,jam_siang_selesai:cfg.jamSiangSelesai,
     jumlah_meja:cfg.jumlahMeja,nama_tempat:cfg.namaTempat,warn_menit:cfg.warnMenit
-  }).eq('id',1).then(function(){});
+  }).eq('id',1).then(sbResult('simpan pengaturan'));
 }
-function sbDelSess(id){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('id',id).then(function(){});}
-function sbDelAllSess(){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().not('id','is',null).then(function(){});}
-function sbDelSessDate(dateStr){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('date_label',dateStr).then(function(){});}
+function sbDelSess(id){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('id',id).then(sbResult('hapus sesi'));}
+function sbDelAllSess(){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().not('id','is',null).then(sbResult('hapus semua sesi'));}
+function sbDelSessDate(dateStr){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('date_label',dateStr).then(sbResult('hapus riwayat tanggal'));}
 
 function updSbUI(on) {
   var dot=document.getElementById('fbDot'),lbl=document.getElementById('fbLabel');
@@ -740,7 +759,7 @@ function saveCredsToSb(newCreds){
       owner_username:credsCache.ownerUsername,
       owner_password:credsCache.ownerPassword,
       kasir_pin:credsCache.kasirPin
-    }).eq('id',1).then(function(){});
+    }).eq('id',1).then(sbResult('simpan kredensial'));
   }
 }
 
