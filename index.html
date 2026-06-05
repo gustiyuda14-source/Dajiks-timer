@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>D-Ajiks Billiard</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#0c0a07;--surface:#141108;--surface2:#1c170e;--surface3:#241e12;
@@ -463,13 +461,10 @@ td.cust{color:var(--text);font-family:'Rajdhani',sans-serif;font-size:13px;font-
         <button class="bsave" onclick="chPin()">🔑 Ubah PIN</button>
       </div>
       <div class="ss" style="grid-column:span 2">
-        <div class="stitle" style="color:#ff6b35">🔥 Firebase Real-Time</div>
-        <div class="fb-st no" id="fbCfgSt">⚠ Belum terhubung</div>
-        <div class="fg"><label class="fl">Firebase Config</label>
-          <textarea class="fi" id="fbCfgInput" style="min-height:70px;resize:vertical;font-size:11px" placeholder='{ apiKey: "...", databaseURL: "...", ... }'></textarea>
-        </div>
-        <button class="bsave" style="background:#ff6b35;color:#fff" onclick="savFbCfg()">🔥 Hubungkan</button>
-        <button class="bsave" style="background:rgba(196,30,58,0.1);color:var(--red2);border:1px solid rgba(196,30,58,0.3);margin-top:6px" onclick="discFb()">Putuskan</button>
+        <div class="stitle" style="color:#3ecf8e">⚡ Supabase Real-Time</div>
+        <div class="fb-st no" id="fbCfgSt">⚠ Belum terhubung ke Supabase</div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7">Database terhubung otomatis ke Supabase. Semua perangkat sinkron secara real-time tanpa konfigurasi tambahan.</p>
+        <button class="bsave" style="background:#3ecf8e;color:#000;margin-top:8px" onclick="connectSb()">🔄 Reconnect Supabase</button>
       </div>
     </div>
   </div>
@@ -478,17 +473,10 @@ td.cust{color:var(--text);font-family:'Rajdhani',sans-serif;font-size:13px;font-
 
 <script>
 // ════════════════════════════════════════════
-// FIREBASE CONFIG
+// SUPABASE CONFIG
 // ════════════════════════════════════════════
-var FB_CONFIG = {
-  apiKey: "AIzaSyBfRmsPTI8TVyC29RlbGusf8PAythNptmg",
-  authDomain: "d-ajiks-timer-gacor.firebaseapp.com",
-  databaseURL: "https://d-ajiks-timer-gacor-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "d-ajiks-timer-gacor",
-  storageBucket: "d-ajiks-timer-gacor.firebasestorage.app",
-  messagingSenderId: "483672843875",
-  appId: "1:483672843875:web:82464a8cc90e250e813a56"
-};
+var SB_URL = 'https://ghhwirwrkwxdbdaflatu.supabase.co';
+var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoaHdpcndya3d4ZGJkYWZsYXR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzkwOTUsImV4cCI6MjA5MzY1NTA5NX0.iM4Zh_mSx0G0rN8HfOJWN2P-FbBO65Sq9somKHmdvmk';
 
 // ════════════════════════════════════════════
 // STATE
@@ -555,130 +543,205 @@ function calcAcc(startTime, elapsedSeconds) {
 }
 
 // ════════════════════════════════════════════
-// FIREBASE
+// SUPABASE
 // ════════════════════════════════════════════
-function connectFb(config) {
+function connectSb() {
   try {
-    if (!firebase.apps.length) firebase.initializeApp(config);
-    window._db = firebase.database();
-    window.fbConnected = true;
-    updFbUI(true);
-    listenFb();
-    loadCredsFromFb();
-    notif('🔥 Firebase terhubung — real-time aktif!','s');
+    window._sb = supabase.createClient(SB_URL, SB_ANON);
+    window.sbConnected = false;
+    updSbUI(false);
+    loadFromSb();
   } catch(e) {
-    console.error('FB error:',e);
-    window.fbConnected = false; localMode = true;
-    updFbUI(false);
+    console.error('SB init error:', e);
+    window.sbConnected = false; localMode = true;
+    updSbUI(false);
+    notif('⚠ Gagal inisialisasi Supabase', 'd');
   }
 }
 
-function listenFb() {
-  if (!window._db) return;
-  window._db.ref('tables').on('value', function(snap) {
-    var data = snap.val()||{};
-    tables2.forEach(function(t) {
-      var fb = data['m'+t.id]; if(!fb) return;
+async function loadFromSb() {
+  try {
+    var sb = window._sb;
+
+    // Load credentials
+    var r1 = await sb.from('credentials').select('*').eq('id',1).single();
+    if(r1.data){
+      credsCache.ownerUsername = r1.data.owner_username;
+      credsCache.ownerPassword = r1.data.owner_password;
+      credsCache.kasirPin = r1.data.kasir_pin;
+    }
+
+    // Load config
+    var r2 = await sb.from('app_config').select('*').eq('id',1).single();
+    if(r2.data){
+      var d = r2.data;
+      var prevMeja = cfg.jumlahMeja;
+      cfg.tarifSiang=d.tarif_siang; cfg.tarifMalam=d.tarif_malam;
+      cfg.jamSiangMulai=d.jam_siang_mulai; cfg.jamSiangSelesai=d.jam_siang_selesai;
+      cfg.jumlahMeja=d.jumlah_meja; cfg.namaTempat=d.nama_tempat; cfg.warnMenit=d.warn_menit;
+      localStorage.setItem('bCfg', JSON.stringify(cfg));
+      if(cfg.jumlahMeja !== prevMeja) initT(cfg.jumlahMeja);
+      // refresh settings fields
+      document.getElementById('sSiang').value=cfg.tarifSiang;
+      document.getElementById('sMalam').value=cfg.tarifMalam;
+      document.getElementById('sJamMulai').value=cfg.jamSiangMulai;
+      document.getElementById('sJamSelesai').value=cfg.jamSiangSelesai;
+      document.getElementById('sMeja').value=cfg.jumlahMeja;
+      document.getElementById('sNama').value=cfg.namaTempat;
+      document.getElementById('sWarn').value=cfg.warnMenit;
+    }
+
+    // Load table states
+    var r3 = await sb.from('timer_tables').select('*').order('id');
+    if(r3.data) {
+      r3.data.forEach(function(fb) {
+        var t = tables2[fb.id-1]; if(!t) return;
+        t.running=fb.running||false; t.paused=fb.paused||false;
+        t.startTime=fb.start_time?new Date(fb.start_time):null;
+        t.rateType=fb.rate_type||'auto'; t.totalCharge=fb.total_charge||0;
+        t.presetHours=fb.preset_hours||0; t.customerName=fb.customer_name||'';
+        if(t.running&&!t.paused&&t.startTime){
+          t.elapsed=Math.floor((Date.now()-t.startTime.getTime())/1000);
+        } else if(t.paused){ t.elapsed=fb.elapsed||0; } else { t.elapsed=0; }
+        if(t.running&&!t.paused&&!t.interval) t.interval=setInterval(function(){tick(t.id);},1000);
+      });
+    }
+
+    // Load sessions — load before subscribing so realtime doesn't race with initial data
+    var r4 = await sb.from('sessions').select('*').order('created_at',{ascending:true});
+    if(r4.data) {
+      sessions2 = r4.data.map(function(s){
+        return {id:s.id,meja:s.meja,customerName:s.customer_name||'',
+          start:s.start_time,elapsed:s.elapsed,rateType:s.rate_type,
+          presetHours:s.preset_hours,siangSec:s.siang_sec,malamSec:s.malam_sec,
+          siangCharge:s.siang_charge,malamCharge:s.malam_charge,
+          charge:s.charge,date:s.date_label};
+      });
+    }
+
+    window.sbConnected = true;
+    updSbUI(true);
+    listenSb();
+    renderT(); renderRep(); updStats(); updShiftBanner();
+    notif('✅ Supabase terhubung — real-time aktif!','s');
+  } catch(e) {
+    console.error('loadFromSb error:', e);
+    window.sbConnected = false; localMode = true;
+    updSbUI(false);
+    notif('⚠ Gagal load data, mode offline','d');
+  }
+}
+
+function listenSb() {
+  if(!window._sb) return;
+  window._sb.channel('timer-realtime')
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'timer_tables'},function(payload){
+      var fb=payload.new; if(!fb) return;
+      var t=tables2[fb.id-1]; if(!t) return;
+      var activeInput=document.activeElement, thisInput=document.getElementById('cn'+fb.id);
+      var isTyping=activeInput&&thisInput&&activeInput===thisInput;
       t.running=fb.running||false; t.paused=fb.paused||false;
-      t.startTime=fb.startTime?new Date(fb.startTime):null;
-      t.rateType=fb.rateType||'auto';
-      t.totalCharge=fb.totalCharge||0;
-      t.presetHours=fb.presetHours||0;
-      // Only update customerName from Firebase if the input is not currently focused
-      var activeInput = document.activeElement;
-      var thisInput = document.getElementById('cn'+t.id);
-      var isTyping = activeInput && thisInput && activeInput === thisInput;
-      if(!isTyping){
-        t.customerName=fb.customerName||'';
-        // Also update the input field value if not focused
-        if(thisInput && !isTyping) thisInput.value = t.customerName;
-      }
-      // Always recalculate elapsed from startTime for accuracy
-      if(t.running && !t.paused && t.startTime){
-        t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
-      } else if(t.paused){
-        t.elapsed = fb.elapsed||0;
-      } else {
-        t.elapsed = 0;
-      }
+      t.startTime=fb.start_time?new Date(fb.start_time):null;
+      t.rateType=fb.rate_type||'auto'; t.totalCharge=fb.total_charge||0; t.presetHours=fb.preset_hours||0;
+      if(!isTyping){t.customerName=fb.customer_name||'';if(thisInput)thisInput.value=t.customerName;}
+      if(t.running&&!t.paused&&t.startTime){
+        t.elapsed=Math.floor((Date.now()-t.startTime.getTime())/1000);
+      } else if(t.paused){t.elapsed=fb.elapsed||0;} else {t.elapsed=0;}
       if(t.running&&!t.paused&&!t.interval) t.interval=setInterval(function(){tick(t.id);},1000);
       if(!t.running&&t.interval){clearInterval(t.interval);t.interval=null;}
-    });
-    renderT(); updStats();
-  });
-  window._db.ref('sessions').on('value', function(snap) {
-    var data = snap.val()||{};
-    sessions2 = Object.values(data);
-    renderRep(); updStats();
-  });
-  window._db.ref('config').on('value', function(snap) {
-    var data = snap.val(); if(data){Object.assign(cfg,data);updShiftBanner();}
-  });
+      renderT(); updStats();
+    })
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'sessions'},function(payload){
+      var s=payload.new; if(!s) return;
+      var sess={id:s.id,meja:s.meja,customerName:s.customer_name||'',
+        start:s.start_time,elapsed:s.elapsed,rateType:s.rate_type,
+        presetHours:s.preset_hours,siangSec:s.siang_sec,malamSec:s.malam_sec,
+        siangCharge:s.siang_charge,malamCharge:s.malam_charge,charge:s.charge,date:s.date_label};
+      if(!sessions2.find(function(x){return x.id===sess.id;})) sessions2.push(sess);
+      renderRep(); updStats();
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'sessions'},function(payload){
+      var oldId=payload.old&&payload.old.id;
+      if(oldId) sessions2=sessions2.filter(function(s){return s.id!==oldId;});
+      renderRep(); updStats();
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'app_config'},function(payload){
+      var d=payload.new; if(!d) return;
+      var prevMeja=cfg.jumlahMeja;
+      cfg.tarifSiang=d.tarif_siang; cfg.tarifMalam=d.tarif_malam;
+      cfg.jamSiangMulai=d.jam_siang_mulai; cfg.jamSiangSelesai=d.jam_siang_selesai;
+      cfg.jumlahMeja=d.jumlah_meja; cfg.namaTempat=d.nama_tempat; cfg.warnMenit=d.warn_menit;
+      updShiftBanner();
+      if(d.jumlah_meja&&d.jumlah_meja!==prevMeja){initT(cfg.jumlahMeja);renderT();}
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'credentials'},function(payload){
+      var d=payload.new; if(!d) return;
+      credsCache.ownerUsername=d.owner_username;
+      credsCache.ownerPassword=d.owner_password;
+      credsCache.kasirPin=d.kasir_pin;
+    })
+    .subscribe();
 }
 
-function fbSetT(t) {
-  if(!window._db) return;
-  window._db.ref('tables/m'+t.id).set({
+function sbSetT(t) {
+  if(!window._sb||!window.sbConnected) return;
+  window._sb.from('timer_tables').update({
     running:t.running,paused:t.paused,
-    startTime:t.startTime?t.startTime.toISOString():null,
-    elapsed:t.elapsed,rateType:t.rateType,
-    totalCharge:t.totalCharge,customerName:t.customerName||'',
-    presetHours:t.presetHours||0
-  });
+    start_time:t.startTime?t.startTime.toISOString():null,
+    elapsed:t.elapsed,rate_type:t.rateType,
+    total_charge:t.totalCharge,customer_name:t.customerName||'',
+    preset_hours:t.presetHours||0,updated_at:new Date().toISOString()
+  }).eq('id',t.id).then(function(){});
 }
-function fbAddSess(s){if(!window._db)return;window._db.ref('sessions').push(s);}
-function fbSaveCfg2(){if(!window._db)return;window._db.ref('config').set(cfg);}
-function fbDelSess(key){if(!window._db)return;window._db.ref('sessions/'+key).remove();}
-function fbDelAllSess(){if(!window._db)return;window._db.ref('sessions').remove();}
-function fbAddMoveLog(log){if(!window._db)return;window._db.ref('moveLogs').push(log);}
+function sbAddSess(s){
+  if(!window._sb||!window.sbConnected) return;
+  window._sb.from('sessions').insert({
+    id:s.id,meja:s.meja,customer_name:s.customerName||'',start_time:s.start,
+    elapsed:s.elapsed,rate_type:s.rateType,preset_hours:s.presetHours||0,
+    siang_sec:s.siangSec||0,malam_sec:s.malamSec||0,
+    siang_charge:s.siangCharge||0,malam_charge:s.malamCharge||0,
+    charge:s.charge,date_label:s.date
+  }).then(function(){});
+}
+function sbSaveCfg(){
+  if(!window._sb||!window.sbConnected) return;
+  window._sb.from('app_config').update({
+    tarif_siang:cfg.tarifSiang,tarif_malam:cfg.tarifMalam,
+    jam_siang_mulai:cfg.jamSiangMulai,jam_siang_selesai:cfg.jamSiangSelesai,
+    jumlah_meja:cfg.jumlahMeja,nama_tempat:cfg.namaTempat,warn_menit:cfg.warnMenit
+  }).eq('id',1).then(function(){});
+}
+function sbDelSess(id){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('id',id).then(function(){});}
+function sbDelAllSess(){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().not('id','is',null).then(function(){});}
+function sbDelSessDate(dateStr){if(!window._sb||!window.sbConnected)return;window._sb.from('sessions').delete().eq('date_label',dateStr).then(function(){});}
 
-function updFbUI(on) {
+function updSbUI(on) {
   var dot=document.getElementById('fbDot'),lbl=document.getElementById('fbLabel');
   var st=document.getElementById('fbCfgSt');
   if(on){dot.className='fbdot live';lbl.textContent='REALTIME';lbl.style.color='#00e5a0';
-    if(st){st.className='fb-st ok';st.textContent='✓ Firebase terhubung — semua device sinkron';}}
+    if(st){st.className='fb-st ok';st.textContent='✓ Supabase terhubung — semua device sinkron';}}
   else{dot.className='fbdot off';lbl.textContent='OFFLINE';lbl.style.color='var(--muted)';
-    if(st){st.className='fb-st no';st.textContent='⚠ Belum terhubung';}}
+    if(st){st.className='fb-st no';st.textContent='⚠ Belum terhubung ke Supabase';}}
 }
-
-function savFbCfg(){
-  var raw=document.getElementById('fbCfgInput').value.trim();
-  try{
-    var c=raw;var s=c.indexOf('{'),e=c.lastIndexOf('}');
-    if(s>-1&&e>-1)c=c.substring(s,e+1);
-    c=c.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g,'$1"$2":').replace(/:\s*'([^']*)'/g,':"$1"').replace(/,(\s*[}\]])/g,'$1').replace(/\/\/.*/g,'');
-    var config=JSON.parse(c);
-    if(!config.databaseURL){notif('databaseURL tidak ditemukan!','d');return;}
-    localStorage.setItem('fbCfg',JSON.stringify(config));
-    connectFb(config);
-  }catch(e){notif('Format config salah','d');}
-}
-function discFb(){localStorage.removeItem('fbCfg');window._db=null;window.fbConnected=false;localMode=true;updFbUI(false);notif('Firebase diputus','');}
 
 // ════════════════════════════════════════════
 // LOGIN
 // ════════════════════════════════════════════
-// Kredensial disimpan di Firebase agar sinkron semua device
+// Kredensial disimpan di Supabase agar sinkron semua device
 var credsCache = {ownerUsername:'gusti',ownerPassword:'admin',kasirPin:'1234'};
 
 function getCreds(){ return credsCache; }
 
-function loadCredsFromFb(){
-  if(!window._db) return;
-  window._db.ref('credentials').on('value', function(snap){
-    var data = snap.val();
-    if(data){ Object.assign(credsCache, data); }
-    else {
-      // Pertama kali — simpan default ke Firebase
-      window._db.ref('credentials').set(credsCache);
-    }
-  });
-}
-
-function saveCredsToFb(newCreds){
+function saveCredsToSb(newCreds){
   Object.assign(credsCache, newCreds);
   localStorage.setItem('bc', JSON.stringify(credsCache));
-  if(window._db) window._db.ref('credentials').set(credsCache);
+  if(window._sb&&window.sbConnected) {
+    window._sb.from('credentials').update({
+      owner_username:credsCache.ownerUsername,
+      owner_password:credsCache.ownerPassword,
+      kasir_pin:credsCache.kasirPin
+    }).eq('id',1).then(function(){});
+  }
 }
 
 function selRole(r){
@@ -706,9 +769,9 @@ function loginOk(r){
   else{b.className='rbadge kasir';b.textContent='🎱 Kasir';document.querySelectorAll('.oo').forEach(function(e){e.style.display='none';});}
   notif('Selamat datang, '+(r==='owner'?'👑 Owner':'🎱 Kasir')+'!','s');
   loadCfg(); initT(cfg.jumlahMeja);
-  connectFb(FB_CONFIG);
   sessions2=JSON.parse(localStorage.getItem('bSess')||'[]');
   renderT(); renderRep(); updStats(); updShiftBanner();
+  connectSb();
 }
 function doLogout(){
   role=null;
@@ -819,8 +882,8 @@ function startT(id){
   t.customerName=el?el.value.trim():'';
   t.running=true;t.paused=false;t.startTime=new Date();t.elapsed=0;t.totalCharge=0;
   t.interval=setInterval(function(){tick(id);},1000);
-  fbSetT(t);
-  if(localMode||!window.fbConnected)savLocal();
+  sbSetT(t);
+  if(localMode||!window.sbConnected)savLocal();
   renderT();
   var msg='Meja '+id+(t.customerName?' ('+t.customerName+')':'');
   if(t.presetHours)msg+=' — '+t.presetHours+' jam';
@@ -877,7 +940,7 @@ function tick(id){
     if((3600-(t.elapsed%3600))===cfg.warnMenit*60)notif('⚠️ Meja '+id+': '+cfg.warnMenit+' menit lagi!','');
   }
 
-  if(t.elapsed%15===0){fbSetT(t);if(localMode||!window.fbConnected)savLocal();}
+  if(t.elapsed%15===0&&(localMode||!window.sbConnected))savLocal();
   updStats();
 }
 
@@ -888,7 +951,7 @@ function pauseT(id){
     t.elapsed = Math.floor((Date.now() - new Date(t.startTime).getTime()) / 1000);
   }
   t.paused=!t.paused;
-  fbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');
+  sbSetT(t);renderT();notif('Meja '+id+' '+(t.paused?'dijeda':'dilanjutkan'),'s');
 }
 
 function stopT(id){
@@ -910,17 +973,17 @@ function stopT(id){
     charge:acc.total,
     date:getWITA().toLocaleDateString('id-ID')
   };
-  sessions2.push(s);fbAddSess(s);
-  if(localMode||!window.fbConnected)localStorage.setItem('bSess',JSON.stringify(sessions2));
+  sessions2.push(s);sbAddSess(s);
+  if(localMode||!window.sbConnected)localStorage.setItem('bSess',JSON.stringify(sessions2));
   t.running=false;t.paused=false;t.elapsed=0;t.totalCharge=0;t.customerName='';t.presetHours=0;
-  fbSetT(t);
+  sbSetT(t);
   notif('Meja '+id+' selesai — Rp '+fmtR(s.charge),'s');
   renderT();renderRep();
 }
 
 function setCN(id,v){
   tables2[id-1].customerName=v;
-  fbSetT(tables2[id-1]);
+  sbSetT(tables2[id-1]);
 }
 function setR(id,t){var tb=tables2[id-1];if(tb.running)return;tb.rateType=t;renderT();}
 
@@ -976,9 +1039,8 @@ function confirmMove(){
   clearInterval(from.interval);from.interval=null;
   from.running=false;from.paused=false;from.elapsed=0;from.totalCharge=0;from.customerName='';from.startTime=null;from.presetHours=0;
   to.interval=setInterval(function(){tick(to.id);},1000);
-  fbSetT(to);fbSetT(from);
-  if(localMode||!window.fbConnected)savLocal();
-  fbAddMoveLog({time:new Date().toISOString(),customerName:to.customerName,fromId:moveFromId,toId:moveToId,saldo:to.totalCharge,date:getWITA().toLocaleDateString('id-ID')});
+  sbSetT(to);sbSetT(from);
+  if(localMode||!window.sbConnected)savLocal();
   addMoveLog(to.customerName,moveFromId,moveToId,to.totalCharge);
   notif('↔ '+(to.customerName||'Customer')+' pindah Meja '+moveFromId+' → Meja '+moveToId,'i');
   closeMoveModal();renderT();
@@ -1033,37 +1095,21 @@ function executeDelete(){
   if (delAll) {
     if (fd) {
       var dateStr = new Date(fd).toLocaleDateString('id-ID');
-      var toDelete = sessions2.filter(function(s){ return s.date === dateStr; });
-      if (window._db) {
-        window._db.ref('sessions').once('value', function(snap){
-          var data = snap.val()||{};
-          Object.keys(data).forEach(function(k){
-            if (toDelete.find(function(s){ return s.id === data[k].id; }))
-              window._db.ref('sessions/'+k).remove();
-          });
-        });
-      }
+      sbDelSessDate(dateStr);
       sessions2 = sessions2.filter(function(s){ return s.date !== dateStr; });
       notif('🗑 Riwayat '+dateStr+' dihapus','s');
     } else {
+      sbDelAllSess();
       sessions2 = [];
-      if (window._db) window._db.ref('sessions').remove();
       notif('🗑 Semua riwayat dihapus','s');
     }
-    localStorage.setItem('bSess', JSON.stringify(sessions2));
+    if(localMode||!window.sbConnected)localStorage.setItem('bSess', JSON.stringify(sessions2));
   } else if (delTargetId) {
     var idx = sessions2.findIndex(function(s){ return s.id === delTargetId; });
     if (idx > -1) {
-      if (window._db) {
-        window._db.ref('sessions').once('value', function(snap){
-          var data = snap.val()||{};
-          Object.keys(data).forEach(function(k){
-            if (data[k].id === delTargetId) window._db.ref('sessions/'+k).remove();
-          });
-        });
-      }
+      sbDelSess(delTargetId);
       sessions2.splice(idx, 1);
-      localStorage.setItem('bSess', JSON.stringify(sessions2));
+      if(localMode||!window.sbConnected)localStorage.setItem('bSess', JSON.stringify(sessions2));
     }
     notif('🗑 Sesi berhasil dihapus','s');
   }
@@ -1153,7 +1199,7 @@ function chOwner(){
   if(np&&np.length<6){notif('Min. 6 karakter!','d');return;}
   if(np&&np!==cp){notif('Konfirmasi tidak cocok!','d');return;}
   var newCreds={ownerUsername:nu||c.ownerUsername,ownerPassword:np||c.ownerPassword,kasirPin:c.kasirPin};
-  saveCredsToFb(newCreds);
+  saveCredsToSb(newCreds);
   document.getElementById('uDisp').textContent=newCreds.ownerUsername;
   ['nUser','oPass','nPass','cPass'].forEach(function(id){document.getElementById(id).value='';});
   notif('✓ Kredensial diubah & sinkron ke semua device!','s');
@@ -1162,12 +1208,12 @@ function chPin(){
   var c=getCreds(),np=document.getElementById('nPin').value,cp=document.getElementById('cPin').value;
   if(!/^\d{4}$/.test(np)){notif('PIN harus 4 digit!','d');return;}
   if(np!==cp){notif('Konfirmasi PIN tidak cocok!','d');return;}
-  saveCredsToFb(Object.assign({},c,{kasirPin:np}));
+  saveCredsToSb(Object.assign({},c,{kasirPin:np}));
   ['nPin','cPin'].forEach(function(id){document.getElementById(id).value='';});
   notif('✓ PIN Kasir diubah & sinkron ke semua device!','s');
 }
-function savCfg(){localStorage.setItem('bCfg',JSON.stringify(cfg));fbSaveCfg2();}
-function savLocal(){localStorage.setItem('bSess',JSON.stringify(sessions2));}
+function savCfg(){localStorage.setItem('bCfg',JSON.stringify(cfg));sbSaveCfg();}
+function savLocal(){if(localMode||!window.sbConnected)localStorage.setItem('bSess',JSON.stringify(sessions2));}
 function loadCfg(){
   var s=localStorage.getItem('bCfg');if(s)Object.assign(cfg,JSON.parse(s));
   document.getElementById('sSiang').value=cfg.tarifSiang;
@@ -1177,7 +1223,6 @@ function loadCfg(){
   document.getElementById('sMeja').value=cfg.jumlahMeja;
   document.getElementById('sNama').value=cfg.namaTempat;
   document.getElementById('sWarn').value=cfg.warnMenit;
-  var fbRaw=localStorage.getItem('fbCfg');if(fbRaw)document.getElementById('fbCfgInput').value=fbRaw;
 }
 
 // ════════════════════════════════════════════
@@ -1208,7 +1253,7 @@ function notif(msg,type){
 function updClock(){
   var n=getWITA();
   document.getElementById('hClock').textContent=n.toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short'})+' '+n.toLocaleTimeString('id-ID')+' WITA';
-  updShiftBanner();updFbUI(window.fbConnected);
+  updShiftBanner();updSbUI(window.sbConnected);
 }
 
 // ════════════════════════════════════════════
@@ -1216,7 +1261,7 @@ function updClock(){
 // ════════════════════════════════════════════
 document.getElementById('fDate').addEventListener('change',renderRep);
 document.getElementById('fDate').value=new Date().toISOString().split('T')[0];
-setInterval(updClock,1000);updClock();updFbUI(false);
+setInterval(updClock,1000);updClock();updSbUI(false);
 </script>
 </body>
 </html>
