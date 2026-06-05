@@ -612,7 +612,13 @@ function listenFb() {
     renderRep(); updStats();
   });
   window._db.ref('config').on('value', function(snap) {
-    var data = snap.val(); if(data){Object.assign(cfg,data);updShiftBanner();}
+    var data = snap.val();
+    if(data){
+      var prevMeja=cfg.jumlahMeja;
+      Object.assign(cfg,data);
+      updShiftBanner();
+      if(data.jumlahMeja&&data.jumlahMeja!==prevMeja){initT(cfg.jumlahMeja);renderT();}
+    }
   });
 }
 
@@ -706,8 +712,8 @@ function loginOk(r){
   else{b.className='rbadge kasir';b.textContent='🎱 Kasir';document.querySelectorAll('.oo').forEach(function(e){e.style.display='none';});}
   notif('Selamat datang, '+(r==='owner'?'👑 Owner':'🎱 Kasir')+'!','s');
   loadCfg(); initT(cfg.jumlahMeja);
-  connectFb(FB_CONFIG);
   sessions2=JSON.parse(localStorage.getItem('bSess')||'[]');
+  connectFb(FB_CONFIG);
   renderT(); renderRep(); updStats(); updShiftBanner();
 }
 function doLogout(){
@@ -877,7 +883,7 @@ function tick(id){
     if((3600-(t.elapsed%3600))===cfg.warnMenit*60)notif('⚠️ Meja '+id+': '+cfg.warnMenit+' menit lagi!','');
   }
 
-  if(t.elapsed%15===0){fbSetT(t);if(localMode||!window.fbConnected)savLocal();}
+  if(t.elapsed%15===0&&(localMode||!window.fbConnected))savLocal();
   updStats();
 }
 
